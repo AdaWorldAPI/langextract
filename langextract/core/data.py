@@ -17,10 +17,16 @@ from __future__ import annotations
 
 import dataclasses
 import enum
+from typing import TYPE_CHECKING
 import uuid
 
 from langextract.core import tokenizer
 from langextract.core import types
+
+if TYPE_CHECKING:
+    from langextract.core import baf_vector
+    from langextract.core import collapse_resistance
+    from langextract.core import grammar_triangle
 
 FormatType = types.FormatType  # Backward compat
 
@@ -92,6 +98,19 @@ class Extraction:
   _token_interval: tokenizer.TokenInterval | None = dataclasses.field(
       default=None, repr=False, compare=False
   )
+  # BAF (Bipolar Awareness Field) components for VSA integration
+  _baf_vector: "baf_vector.HyperVector | None" = dataclasses.field(
+      default=None, repr=False, compare=False
+  )
+  _collapse_resistance: float | None = dataclasses.field(
+      default=None, repr=False, compare=False
+  )
+  _uncertainty_tensor: "collapse_resistance.UncertaintyTensor | None" = dataclasses.field(
+      default=None, repr=False, compare=False
+  )
+  _grammar_triangle: "grammar_triangle.GrammarTriangleField | None" = dataclasses.field(
+      default=None, repr=False, compare=False
+  )
 
   def __init__(
       self,
@@ -105,6 +124,10 @@ class Extraction:
       group_index: int | None = None,
       description: str | None = None,
       attributes: dict[str, str | list[str]] | None = None,
+      baf_vector: "baf_vector.HyperVector | None" = None,
+      collapse_resistance: float | None = None,
+      uncertainty_tensor: "collapse_resistance.UncertaintyTensor | None" = None,
+      grammar_triangle: "grammar_triangle.GrammarTriangleField | None" = None,
   ):
     self.extraction_class = extraction_class
     self.extraction_text = extraction_text
@@ -115,6 +138,11 @@ class Extraction:
     self.group_index = group_index
     self.description = description
     self.attributes = attributes
+    # BAF components
+    self._baf_vector = baf_vector
+    self._collapse_resistance = collapse_resistance
+    self._uncertainty_tensor = uncertainty_tensor
+    self._grammar_triangle = grammar_triangle
 
   @property
   def token_interval(self) -> tokenizer.TokenInterval | None:
@@ -123,6 +151,90 @@ class Extraction:
   @token_interval.setter
   def token_interval(self, value: tokenizer.TokenInterval | None) -> None:
     self._token_interval = value
+
+  @property
+  def baf_vector(self) -> "baf_vector.HyperVector | None":
+    """Return the BAF (Bipolar Awareness Field) hypervector."""
+    return self._baf_vector
+
+  @baf_vector.setter
+  def baf_vector(self, value: "baf_vector.HyperVector | None") -> None:
+    """Set the BAF hypervector."""
+    self._baf_vector = value
+
+  @property
+  def collapse_resistance(self) -> float | None:
+    """Return the collapse resistance value (0-1).
+
+    Collapse resistance determines how much the extraction should resist
+    being bound to a fixed semantic role. High resistance (close to 1.0)
+    preserves superposition; low resistance (close to 0.0) allows binding.
+    """
+    return self._collapse_resistance
+
+  @collapse_resistance.setter
+  def collapse_resistance(self, value: float | None) -> None:
+    """Set the collapse resistance value."""
+    if value is not None and not 0 <= value <= 1:
+      raise ValueError(f"collapse_resistance must be in [0, 1], got {value}")
+    self._collapse_resistance = value
+
+  @property
+  def uncertainty_tensor(self) -> "collapse_resistance.UncertaintyTensor | None":
+    """Return the 3x3 epistemic uncertainty tensor."""
+    return self._uncertainty_tensor
+
+  @uncertainty_tensor.setter
+  def uncertainty_tensor(self, value: "collapse_resistance.UncertaintyTensor | None") -> None:
+    """Set the uncertainty tensor."""
+    self._uncertainty_tensor = value
+
+  @property
+  def grammar_triangle(self) -> "grammar_triangle.GrammarTriangleField | None":
+    """Return the Grammar Triangle Field (NSM, causality, qualia)."""
+    return self._grammar_triangle
+
+  @grammar_triangle.setter
+  def grammar_triangle(self, value: "grammar_triangle.GrammarTriangleField | None") -> None:
+    """Set the Grammar Triangle Field."""
+    self._grammar_triangle = value
+
+  def compute_baf_components(
+      self,
+      base_embedding: "baf_vector.np.ndarray | None" = None,
+      context_ambiguity: float = 0.5,
+  ) -> None:
+    """Compute all BAF components for this extraction.
+
+    This computes:
+    - Grammar Triangle Field (NSM, causality, qualia)
+    - Collapse resistance
+    - Uncertainty tensor
+    - BAF hypervector
+
+    Args:
+      base_embedding: Optional dense embedding vector (e.g., from Jina).
+      context_ambiguity: External measure of contextual ambiguity [0, 1].
+    """
+    from langextract.core import collapse_resistance as cr
+    from langextract.core import grammar_triangle as gt
+
+    # Compute Grammar Triangle Field
+    self._grammar_triangle = gt.GrammarTriangleField.from_extraction(
+        self, base_embedding=base_embedding
+    )
+
+    # Extract awareness vector from triangle
+    if self._grammar_triangle.awareness_vector is not None:
+      self._baf_vector = self._grammar_triangle.awareness_vector
+
+    # Compute collapse resistance
+    self._collapse_resistance = cr.compute_collapse_resistance(
+        self, context_ambiguity=context_ambiguity
+    )
+
+    # Compute uncertainty tensor
+    self._uncertainty_tensor = cr.compute_uncertainty_tensor(self)
 
 
 @dataclasses.dataclass

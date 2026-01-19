@@ -28,4 +28,7 @@ __all__ = [
     "schema",
     "data",
     "tokenizer",
+    "baf_vector",
+    "collapse_resistance",
+    "grammar_triangle",
 ]
