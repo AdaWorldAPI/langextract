@@ -49,6 +49,11 @@ ALIGNMENT_PARAM_KEYS: Final[frozenset[str]] = frozenset({
     "suppress_parse_errors",
 })
 
+BAF_PARAM_KEYS: Final[frozenset[str]] = frozenset({
+    "compute_baf",
+    "context_ambiguity",
+})
+
 
 class AbstractResolver(abc.ABC):
   """Resolves LLM text outputs into structured data."""
@@ -286,6 +291,8 @@ class Resolver(AbstractResolver):
       fuzzy_alignment_threshold: float = _FUZZY_ALIGNMENT_MIN_THRESHOLD,
       accept_match_lesser: bool = True,
       tokenizer_inst: tokenizer_lib.Tokenizer | None = None,
+      compute_baf: bool = False,
+      context_ambiguity: float = 0.5,
       **kwargs,
   ) -> Iterator[data.Extraction]:
     """Aligns annotated extractions with source text.
@@ -307,6 +314,10 @@ class Resolver(AbstractResolver):
       accept_match_lesser: Whether to accept partial exact matches (MATCH_LESSER
         status).
       tokenizer_inst: Optional tokenizer instance.
+      compute_baf: Whether to compute BAF (Bipolar Awareness Field) components
+        for each extraction. Includes collapse resistance and uncertainty tensor.
+      context_ambiguity: External measure of contextual ambiguity [0, 1] used
+        when computing collapse resistance. Only used if compute_baf is True.
       **kwargs: Additional parameters.
 
     Yields:
@@ -340,6 +351,14 @@ class Resolver(AbstractResolver):
     )
 
     for extraction in itertools.chain(*aligned_yaml_extractions):
+      # Compute BAF components if requested
+      if compute_baf:
+        extraction.compute_baf_components(context_ambiguity=context_ambiguity)
+        logging.debug(
+            "Computed BAF for extraction %s: collapse_resistance=%.2f",
+            extraction.extraction_text,
+            extraction.collapse_resistance or 0.0,
+        )
       logging.debug("Yielding aligned extraction: %s", extraction)
       yield extraction
 
